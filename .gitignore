@@ -1,0 +1,14 @@
+*.sql
+*.parquet
+*.xlsx
+*~.xlsx
+*.init
+__pycache__
+/__pycache__
+build
+/build
+dist
+/dist
+venv
+/venv
+*.spec
