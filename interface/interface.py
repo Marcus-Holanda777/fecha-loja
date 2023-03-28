@@ -3,12 +3,15 @@ from rich.markdown import Markdown
 from rich.prompt import IntPrompt, Prompt, Confirm
 from rich.tree import Tree
 from rich.table import Table
+from rich.align import Align
 from collections import namedtuple
 from pathlib import Path
 import pandas as pd
+from pandas import DataFrame
 import numpy as np
 import re
 import os
+import gc
 from sqlalchemy.engine import Engine
 from utils.utils import (
     lista_loja, 
@@ -18,10 +21,12 @@ from utils.utils import (
     distribuicao
 )
 
-Fecha = namedtuple('Fecha', 'filial dep tipo destino categoria')
+
+Fecha = namedtuple('Fecha', 'filial dep tipo destino categoria dmd')
 
 terminal = Console()
 
+DEFAULT_DMD = 360
 MARKDOWN = """
 # SISTEMA LOJA FECHADA
 
@@ -42,6 +47,14 @@ MARKDOWN = """
 
 """
 
+def retorna_wraper_number(start: int, end: int, prompt: str, msg: str, default: int = DEFAULT_DMD):
+    while True:
+        filial = IntPrompt.ask(prompt, console=terminal, default=default)
+        if filial >=start and filial <= end:
+            return filial
+        terminal.print(f"[prompt.invalid]{msg}")
+
+
 def retorno_filiais() -> list[int]:
     """_summary_
 
@@ -51,10 +64,8 @@ def retorno_filiais() -> list[int]:
     inteiros = re.compile(r'[1-9\s]')
     while True:
         filiais = Prompt.ask(">> filiais [red b]fil[/]", default='erro', show_default=False)
-
         if inteiros.match(filiais):
             return list(map(int, filiais.split()))
-        
         terminal.print("[prompt.invalid]digitar loja ou lista de lojas")
 
 
@@ -120,7 +131,7 @@ def retorna_categoria() -> list[str] | None:
     Returns:
         list[str] | None: _description_
     """
-    categs = ['term', 'frac', 'env', 'psico']
+    categs = ['term', 'frac', 'env', 'psico', 'uc']
 
     while True:
         categ = Prompt.ask(f">> categoria [b magenta]{categs}[/]", console=terminal, default='full')
@@ -165,13 +176,14 @@ def input_definicoes() -> Fecha:
         Fecha: _description_
     """
     terminal.rule("DEFININDO OS FILTROS")
-    filial = IntPrompt.ask(">> loja origem", console=terminal)
-    dep = IntPrompt.ask(">> cd destino", console=terminal)
+    filial = retorna_wraper_number(1, 9999, ">> filial origem", "digitar filial entre 1 e 9999", 1)
+    dep = retorna_wraper_number(1, 10, ">> deposito destino", "digitar deposito entre 1 e 10", 1)
+    dmd = retorna_wraper_number(30, DEFAULT_DMD, ">> demanda venda", "digitar demanda entre 30 e 360")
     tipo = Prompt.ask(">> filtro", console=terminal, choices=['gr', 'go', 'uf', 'fil'])
     destino = retorna_tipo(tipo)
     categoria = retorna_categoria()
 
-    return Fecha(filial=filial, dep=dep, tipo=tipo, destino=destino, categoria=categoria)
+    return Fecha(filial=filial, dep=dep, tipo=tipo, destino=destino, categoria=categoria, dmd=dmd)
 
 
 def gera_estoque(
@@ -241,83 +253,161 @@ def listar_arquivos():
     terminal.print(t)
 
 
+def c_format(obj):
+    if isinstance(obj, float):
+        return f"{obj:_.2f}".replace('.', ',').replace('_', '.')
+    elif isinstance(obj, int):
+        return f"{obj}"
+    else:
+        return obj
+
+
+def table_estoque(
+    df_origem: DataFrame,
+    df_categoria: DataFrame,
+    spinner: str
+) -> None:
+
+    terminal.rule("TABELA [RESUMO ESTOQUE]")
+
+    table = Table(title="Resumo Filial Origem")
+    center_table = Align.center(table)
+    table.add_column("FILIAL", justify="center", style="cyan", no_wrap=True)
+    table.add_column("CATEG", justify="left", style="cyan", no_wrap=True)
+    table.add_column("R$ ESTOQUE", justify="right", style="green")
+    
+    with terminal.status("[bold green]Calculando Resumo Estoque ...", spinner=spinner) as live:
+        grupo = (
+            df_origem
+            .merge(df_categoria.loc[:, ['CODIGO', 'CATEG']], how='inner', on='CODIGO', suffixes=['_or', '_dest'])
+            .assign(CATEG_or = lambda _df: _df['CATEG_or'].where(~_df['CATEG_or'].isnull(), _df['CATEG_dest']))
+            .drop(columns=['CATEG_dest'])
+            .rename(columns={'CATEG_or': 'CATEG'})
+            .assign(VL_ESTOQUE = lambda _df: _df['QT_ESTOQUE'] * _df['VL_CMPG'])
+            .groupby(['FILIAL', 'CATEG'], as_index=False)
+            .agg({'VL_ESTOQUE': np.sum})
+        )
+
+        for row in grupo.itertuples(index=False):
+            lin = [c_format(c) for c in row]
+            table.add_row(*lin)
+
+    terminal.print(center_table)
+    
+
 def table_resumo(
-    df: pd.DataFrame, 
-    dmd: pd.DataFrame, 
-    df_origem: pd.DataFrame
+    df: DataFrame, 
+    df_categoria: DataFrame,
+    dmd: DataFrame, 
+    df_origem: DataFrame,
+    spinner: str
 ) -> None:
     """_summary_
 
     Args:
-        df (pd.DataFrame): _description_
-        dmd (pd.DataFrame): _description_
-        df_origem (pd.DataFrame): _description_
+        df (DataFrame): _description_
+        df_categoria (DataFrame): _description_
+        dmd (DataFrame): _description_
+        df_origem (DataFrame): _description_
+        limite_venda (int, optional): _description_. Defaults to 360.
 
     Returns:
         _type_: _description_
     """
-    terminal.rule("TABELA [RESUMO]")
+    terminal.rule("TABELA [RESUMO DISTRIBUICAO]")
+
     table = Table(title="Resumo Filial Destino")
+    center_table = Align.center(table)
     table.add_column("FILIAL", justify="center", style="cyan", no_wrap=True)
-
-    for col in range(30, 210, 30):
-        table.add_column(f"R$ OP_{col}", justify="right", style="green")
-
-
-    grupo = (
-        pd.merge(
-            df, dmd, how='inner', on=['FILIAL', 'CODIGO']
-        )
-        .merge(df_origem.drop(columns='FILIAL'), on='CODIGO', suffixes=['_dest', '_or'])
-    )
-
-    def oportunidade(grp: pd.DataFrame):
-        for dias in range(30, 210, 30):
-            grp[f'OP_{dias}'] = (
-                np.where(
-                    (dias * grp['DMD']) - grp['QT_ESTOQUE_dest'] <= 0, 0,
-                    np.where(
-                        grp['QT_ESTOQUE_or'] - ((dias * grp['DMD']) - grp['QT_ESTOQUE_dest']) >=0, 
-                        (dias * grp['DMD']) - grp['QT_ESTOQUE_dest'],
-                        grp['QT_ESTOQUE_or']
-                    )
-                ) * grp['VL_CMPG_or']
-            )
-        
-        return grp
-
+    table.add_column("CATEG", justify="left", style="cyan", no_wrap=True)
     
-    grupo = (
-        grupo.assign(TOTAL = grupo['QT_ESTOQUE_dest'] * grupo['VL_CMPG_dest'])
-        .pipe(oportunidade)
-        .drop(columns=['CODIGO', 'VL_CMPG_or', 'VL_CMPG_dest', 'QT_ESTOQUE_or', 'QT_ESTOQUE_dest'])
-        .groupby(['FILIAL'])
-        .sum()
-        .reset_index()
-        .sort_values('TOTAL', ascending=False)
-        .loc[:, ["FILIAL"] + [f"OP_{c}" for c in range(30, 210, 30)]]
-    )
+    with terminal.status("[bold green]Calculando Resumo ...", spinner=spinner) as live:
+        for col in range(30, 210, 30):
+            table.add_column(f"R$ OP_{col}", justify="right", style="green")
+        table.add_column(f"R$ OP_{DEFAULT_DMD}", justify="right", style="green")
 
-    for row in grupo.itertuples(index=False):
-        lin = [f"{c:.2f}" for c in row]
-        table.add_row(*lin)
+        grupo = (
+            pd.merge(
+                df, dmd, how='inner', on=['FILIAL', 'CODIGO']
+            )
+            .merge(
+                df_origem.groupby(['CODIGO', 'VL_CMPG'], as_index=False).agg({'QT_ESTOQUE': np.sum})
+              , how='inner', on='CODIGO', suffixes=['_dest', '_or'])
+            .merge(df_categoria.loc[:, ['CODIGO', 'CATEG']], how='inner', on='CODIGO')
+        )
+        
+        # TODO: Cria oportunidade
+        def oportunidade(grp: pd.DataFrame):
+            for dias in range(30, 210, 30):
+                grp[f'OP_{dias}'] = (
+                    np.where(
+                        (dias * grp['DMD']) - grp['QT_ESTOQUE_dest'] <= 0, 0,
+                        np.where(
+                            grp['QT_ESTOQUE_or'] - round((dias * grp['DMD']) - grp['QT_ESTOQUE_dest'], 0) >=0, 
+                            round((dias * grp['DMD']) - grp['QT_ESTOQUE_dest'], 0),
+                            grp['QT_ESTOQUE_or']
+                        )
+                    ) * grp['VL_CMPG_or']
+                )
+            
+            # 360 dias
+            grp[f'OP_{DEFAULT_DMD}'] = (
+                    np.where(
+                        (DEFAULT_DMD * grp['DMD']) - grp['QT_ESTOQUE_dest'] <= 0, 0,
+                        np.where(
+                            grp['QT_ESTOQUE_or'] - round((DEFAULT_DMD * grp['DMD']) - grp['QT_ESTOQUE_dest'], 0) >=0, 
+                            round((DEFAULT_DMD * grp['DMD']) - grp['QT_ESTOQUE_dest'], 0),
+                            grp['QT_ESTOQUE_or']
+                        )
+                    ) * grp['VL_CMPG_or']
+                )
+            
+            return grp
+    
+        grupo = (
+            grupo.assign(TOTAL = grupo['QT_ESTOQUE_dest'] * grupo['VL_CMPG_dest'])
+            .pipe(oportunidade)
+            .drop(columns=['CODIGO', 'VL_CMPG_or', 'VL_CMPG_dest', 'QT_ESTOQUE_or', 'QT_ESTOQUE_dest'])
+            .groupby(['FILIAL', 'CATEG'])
+            .sum()
+            .reset_index()
+            .sort_values(['FILIAL', 'CATEG', 'TOTAL'], ascending=False)
+            .loc[:, ["FILIAL", "CATEG"] + [f"OP_{c}" for c in range(30, 210, 30)] + [f'OP_{DEFAULT_DMD}']]
+        )
+        
+        for row in grupo.itertuples(index=False):
+            lin = [c_format(c) for c in row]
+            table.add_row(*lin)
 
-    terminal.print(table)
+    terminal.print(center_table)
+
+
+def gera_distribuicao(
+    df_origem: pd.DataFrame, 
+    df_categoria: pd.DataFrame, 
+    df_dmd: pd.DataFrame, 
+    df_destino: pd.DataFrame, 
+    dias: int,
+    spinner: str,
+    filtro_categ: list[str] = None
+) -> None:
+
+    terminal.rule("DISTRIBUICAO")
+    with terminal.status("[bold green]Distribuindo loja ...", spinner=spinner) as live:
+        distribuicao(df_origem, df_categoria, df_dmd, df_destino, terminal, dias, filtro_categ)
 
 
 def menu(
     conn: Engine, 
     conn_bk: Engine,
-    dias_dmd: int,
-    spinner: str = 'moon'
+    spinner: str
 ) -> None:
     """_summary_
 
     Args:
         conn (Engine): _description_
         conn_bk (Engine): _description_
-        dis_dmd (int): _description_
-        spinner (str, optional): _description_. Defaults to 'moon'.
+        spinner (str): _description_
     """
     while True:
         md = Markdown(MARKDOWN, code_theme="monokai")
@@ -328,16 +418,16 @@ def menu(
         df_destino, df_origem, df_categoria = gera_estoque(fecha, conn, lojas, spinner)
         df_dmd = gera_demanda(conn, conn_bk, lojas, spinner)
         listar_arquivos()
-        table_resumo(df_destino, df_dmd, df_origem)
-        distribuicao(df_origem, df_categoria, df_dmd, df_destino, terminal, dias_dmd, fecha.categoria)
+        table_estoque(df_origem, df_categoria, spinner)
+        table_resumo(df_destino, df_categoria, df_dmd, df_origem, spinner)
+        gera_distribuicao(df_origem, df_categoria, df_dmd, df_destino, fecha.dmd, spinner, fecha.categoria)
 
         terminal.rule("RETORNO [???]")
         flag = Confirm.ask("[b]>> Deseja fechar outra filial ?[/b]", console=terminal)
         if flag:
             os.system('cls||clear')
             terminal.clear()
+            gc.collect()
             menu(conn, conn_bk, spinner)
         
         break
-
-

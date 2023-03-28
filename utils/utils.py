@@ -5,6 +5,9 @@ from sqlalchemy.engine import Engine
 from dateutil.relativedelta import relativedelta
 from datetime import date
 from rich.console import Console
+from rich.live import Live
+from rich.table import Table
+from rich.align import Align
 
 
 PATH_SEL = Path() / 'data'
@@ -81,13 +84,12 @@ def load_estoque(tipo: str, conn: Engine, *filiais) -> pd.DataFrame:
     Returns:
         pd.DataFrame: dataframe pandas com os dados das filiais
     """
-    sel = load_sel('estoque.sql')
+    sel = load_sel('estoque_origem.sql') if tipo == 'origem' else load_sel('estoque.sql')
 
     if filiais:
         filtro = ','.join(map(str, filiais))
         sel = sel.format(filiais=filtro)
 
-    sel = sel.replace('--', '') if tipo == 'origem' else sel
     df = gera_dataframe(sel, conn, f'estoque_{tipo}')
 
     return df
@@ -194,74 +196,118 @@ def distribuicao(
     df_dmd: pd.DataFrame, 
     df_destino: pd.DataFrame, 
     terminal: Console,
-    dias = 30,
+    dias: int,
     filtro_categ: list[str] = None
 ) -> None:
+    
+    # TODO: Verificar se tem UC na origem
+    if 'UC' in set(filtro_categ):
+        lista_codigo = (
+            df_origem.merge(df_categoria.loc[:, ['CODIGO', 'CATEG']], on=['CODIGO'], suffixes=['_or', '_cat'])
+            .assign(CATEG_or = lambda _df: _df['CATEG_or'].where(~_df['CATEG_or'].isnull(), _df['CATEG_cat']))
+            .drop(columns=['CATEG_cat'])
+            .rename(columns={'CATEG_or': 'CATEG'})
+            .loc[lambda _df: _df['CATEG'].isin(filtro_categ), 'CODIGO']
+            .unique()
+            .tolist()
+        )
+    else:
+        lista_codigo = (
+            df_categoria.loc[df_categoria['CATEG'].isin(filtro_categ), 'CODIGO']
+            .unique()
+            .tolist()
+        )
 
     # TODO: Realizar o join entre as tabelas -- calcular oportunidade
     df_dist = (
         df_destino.merge(
-            df_categoria.loc[df_categoria['CATEG'].isin(filtro_categ), :], 
+            df_categoria.loc[df_categoria['CODIGO'].isin(lista_codigo), :], 
             how='inner', on='CODIGO'
         )
         .merge(df_dmd, how='inner', on=['FILIAL', 'CODIGO'])
         .assign(RECEBER = lambda _df: np.where(
-              ((dias * _df['DMD']) - _df['QT_ESTOQUE']) <= 0, 0,
+              (dias * _df['DMD']) - _df['QT_ESTOQUE'] <= 0, 0,
               round((dias * _df['DMD']) - _df['QT_ESTOQUE'], 0)
               )
+         ,ID_MOV = 0
+         ,CATEG_ORIGEM = None
          ,DISTRIB = 0
+         ,SALDO_ANTERIOR = 0
+         ,CUSTO_ORIGEM = 0.0
         )
-        .astype({'RECEBER': 'int', 'DISTRIB': 'int'})
+        .astype(
+            {
+                'RECEBER': 'int', 
+                'ID_MOV': 'int', 
+                'DISTRIB': 'int', 
+                'SALDO_ANTERIOR': 'int', 
+                'CUSTO_ORIGEM': 'float'
+            }
+        )
         .sort_values(['RECEBER'], ascending=False)
     )
     
-    # TODO: Criar coluna distribuido na origem
-    df_origem = df_origem.assign(DISTRIB = 0).astype({'DISTRIB': 'int'})
+    # TODO: Criar coluna distribuido na origem -- filtrando dados da origem
+    df_origem = (
+        df_origem
+        .merge(df_categoria.loc[:, ['CODIGO', 'CATEG']], on=['CODIGO'], suffixes=['_or', '_cat'])
+        .assign(CATEG_or = lambda _df: _df['CATEG_or'].where(~_df['CATEG_or'].isnull(), _df['CATEG_cat']))
+        .drop(columns=['CATEG_cat'])
+        .rename(columns={'CATEG_or': 'CATEG'})
+        .loc[lambda _df: _df['CATEG'].isin(filtro_categ), :]
+        .assign(DISTRIB = 0).astype({'DISTRIB': 'int'})
+    )
     
     # TODO: Fazer a distribuicao
-
-    with terminal.status("[bold green]Distribuindo ...") as espera:
-        for enviar in df_origem.itertuples():
-            codigo_env = enviar.CODIGO
-            qtd_env = enviar.QT_ESTOQUE
-            index = enviar.Index
+    id_movimento = 1
+    for enviar in df_origem.itertuples():
+        codigo_env = enviar.CODIGO
+        qtd_env = enviar.QT_ESTOQUE
+        index = enviar.Index
+        custo = enviar.VL_CMPG
+        categ_or = enviar.CATEG
             
-            # TODO: Filtrando com base no produto
-            filtro = (df_dist['CODIGO'] == codigo_env) & (df_dist['RECEBER'] >= qtd_env)
-            filtro_prod = df_dist.loc[filtro, :]
+        # TODO: Filtrando com base no produto
+        filtro = (df_dist['CODIGO'] == codigo_env) & (df_dist['RECEBER'] > 0)
+        filtro_prod = df_dist.loc[filtro, :]
             
-            # TODO: Se não tiver oportunidade pular para o proximo item
-            if len(filtro_prod) == 0:
-                continue
-
-            for receber in filtro_prod.itertuples():
-                qtd_recebe = receber.RECEBER
-                filial_recebe = receber.FILIAL
-                codigo_recebe = receber.CODIGO
+        # TODO: Se não tiver oportunidade pular para o proximo item
+        if len(filtro_prod) == 0:
+            continue
+            
+        for receber in filtro_prod.itertuples():
+            qtd_recebe = receber.RECEBER
+            filial_recebe = receber.FILIAL
+            codigo_recebe = receber.CODIGO
+            categ_dest = receber.CATEG
                 
-                # TODO: Caso o Produto Zere é pra sair do loop
-                if qtd_env == 0:
-                    break
+            # TODO: Caso o Produto Zere é pra sair do loop
+            if qtd_env == 0:
+                break
                 
-                filtro_dist = (df_dist['CODIGO'] == codigo_recebe) & (df_dist['FILIAL'] == filial_recebe)
+            filtro_dist = (df_dist['CODIGO'] == codigo_recebe) & (df_dist['FILIAL'] == filial_recebe)
 
-                if qtd_env > qtd_recebe:
-                   diminuir = qtd_recebe
-                   df_dist.loc[filtro_dist, 'RECEBER'] -= qtd_recebe
-                   df_dist.loc[filtro_dist, 'DISTRIB'] += qtd_recebe
-                else:
-                   diminuir = qtd_env
-                   df_dist.loc[filtro_dist, 'RECEBER'] -= qtd_env
-                   df_dist.loc[filtro_dist, 'DISTRIB'] += qtd_env
-
-                qtd_env -= diminuir
-                df_origem.loc[index, 'DISTRIB'] += diminuir
+            if qtd_env > qtd_recebe:
+                diminuir = qtd_recebe
+            else:
+                diminuir = qtd_env
+                
+            df_dist.loc[filtro_dist, 'ID_MOV'] = id_movimento
+            df_dist.loc[filtro_dist, 'CATEG_ORIGEM'] = (
+                categ_or if categ_or is not None 
+                else categ_dest 
+            )
+            df_dist.loc[filtro_dist, 'RECEBER'] -= diminuir
+            df_dist.loc[filtro_dist, 'DISTRIB'] += diminuir
+            df_dist.loc[filtro_dist, 'SALDO_ANTERIOR'] = qtd_env
+            df_dist.loc[filtro_dist, 'CUSTO_ORIGEM'] = custo 
+                
+            id_movimento += 1
+            qtd_env -= diminuir
+            df_origem.loc[index, 'DISTRIB'] += diminuir
         
-        terminal.log('Distribuicao conluida')
-
-        df_dist.to_excel('DISTRIBUIDO.xlsx')
-        terminal.log('Tabela distribuido')
-        
-        df_origem.to_excel('ORIGEM.xlsx')
-        terminal.log('Tabela origem')
-        
+    terminal.log('Distribuicao concluida')
+    df_dist.to_excel('DISTRIBUIDO.xlsx', index=False)
+    terminal.log('Exportado, distribuicao')
+    df_origem.to_excel('ORIGEM.xlsx', index=False)
+    terminal.log('Exportado origem')

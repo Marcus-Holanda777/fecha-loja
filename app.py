@@ -2,10 +2,10 @@ from controllers.conexao import Conexao
 from interface.interface import menu, terminal
 import sys
 
-def run(dias_dmd = 30, spinner = 'moon'):
+def run(spinner = 'moon'):
     conn = Conexao().conectar()
     conn_bk = Conexao(server='cosmosdw').conectar()
-    menu(conn, conn_bk, dias_dmd, spinner)
+    menu(conn, conn_bk, spinner)
 
 
 if __name__ == '__main__':
