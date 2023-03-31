@@ -1,67 +1,113 @@
-from reportlab.pdfgen import canvas
+from reportlab.pdfgen.canvas import Canvas
+from reportlab.platypus import Table, TableStyle, SimpleDocTemplate
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-from models import Rect, Imagem, Texto
-from models import (
-    EIXO_X,
-    EIXO_Y, 
-    LARGURA,
-    ALTURA, 
-    LARGURA_RECT, 
-    ALTURA_RECT,
-    ICON_STR,
-    ALTURA_ICON,
-    LARGURA_ICON,
-    EIXO_X_ICON,
-    EIXO_Y_ICON,
-    ESTILO_FONTE
-)
+from models import Rect, Imagem, Texto, Line
+from models import EIXO_X 
 from dataclasses import asdict
 
 
-# TODO: Criar um simples PDF
-pdf = canvas.Canvas("teste.pdf", pagesize=A4)
+class Reports:
+    def __init__(
+        self,
+        title: str,
+        filename: str,
+        pags: int,
+        rects: list[Rect],
+        imgs:  list[Imagem],
+        lines: list[Line],
+        texts: list[Texto],
+        table_style: TableStyle,
+        table: Table,
+        lines_table: int
+    ) -> None:
 
-# TODO: Criando e adicionado um relangulo
-pdf.saveState()
-rect = Rect(x=EIXO_X, y=EIXO_Y, width=LARGURA_RECT, height=ALTURA_RECT, fill=0, stroke=1)
-pdf.rect(**asdict(rect))
-pdf.restoreState()
+        self.title = title
+        self.filename = filename
+        self.pags = pags
+        self.rects = rects
+        self.imgs = imgs
+        self.lines = lines
+        self.texts = texts
+        self.table_style = table_style
+        self.table = table
+        self.lines_table = lines_table
 
-# TODO: Importar e adicionar uma imagem
-pdf.saveState()
-logo = Imagem(image=ICON_STR, x=EIXO_X_ICON, y=EIXO_Y_ICON, width=LARGURA_ICON, height=ALTURA_ICON)
-pdf.drawImage(**asdict(logo))
-caminhao = Imagem(image='reports/caminhao.png', x=EIXO_X_ICON, y=EIXO_Y_ICON - 50.0, width=80.0, height=40.0)
-pdf.drawImage(**asdict(caminhao))
-pdf.restoreState()
+    def draw_rects(self, canvas: Canvas) -> None:
+        for rect in self.rects:
+            canvas.saveState()
+            canvas.rect(**asdict(rect))
+            canvas.restoreState()
+    
+    def import_imgs(self, canvas: Canvas) -> None:
+        for img in self.imgs:
+            canvas.saveState()
+            canvas.drawImage(**asdict(img))
+            canvas.restoreState()
 
-# TODO: Desenhando um linha
-pdf.saveState()
-pdf.setStrokeColor(colors.HexColor("#0056AB"))
-pdf.setDash(1, 2)
-pdf.setLineWidth(1.0)
-pdf.line(EIXO_X_ICON + 160.0, ALTURA - 20.0, EIXO_X_ICON + 160.0, ALTURA - 82.0)
-pdf.restoreState()
+    def draw_lines(self, canvas: Canvas) -> None:
+        for line in self.lines:
+            canvas.saveState()
+            canvas.setStrokeColor(colors.HexColor(line.color))
+            canvas.setDash(line.dash)
+            canvas.setLineWidth(line.width)
 
-# TODO: Escrever um texto com o
-# Numero da loja e nome
-# Categoria dos produtos -- UC --
+            position = {k:v for k, v in asdict(line).items() if k[0] in 'yx'}
+            canvas.line(**position)
+            canvas.restoreState()
 
-pdf.saveState()
-texto = pdf.beginText(x=EIXO_X + 200.0, y=EIXO_Y + 50.0)
-texto.setFont(ESTILO_FONTE, size=16)
-texto.setFillColor(colors.HexColor("#ED1C24"))
-texto.textLines(
-    '''
-    Fechamento loja 0760, destino filial 0175
-    Categoria: Ultima chance
-    Data relatorio: 29/03/2023 16:28
-    '''
-)
-pdf.drawText(texto)
-pdf.restoreState()
+    def draw_texts(self, canvas: Canvas) -> None:
+        for text in self.texts:
+            canvas.saveState()
+            texto = canvas.beginText(x=text.x, y=text.y)
+            texto.setFont(text.font, size=text.size)
+            texto.setFillColor(colors.HexColor(text.color))
+            texto.textLines(text.lines)
+            canvas.drawText(texto)
+            canvas.restoreState()
+    
+    def doc_rodape(self, canvas: Canvas, doc: SimpleDocTemplate):
+        canvas.saveState()
+        canvas.drawString(EIXO_X, EIXO_X, "Pagina: %02d de %02d" % (doc.page, self.pags))
+        canvas.restoreState()
 
-# TODO: Salvando o arquivo
-pdf.save()
+    def doc_first_page(
+        self, 
+        canvas: Canvas, 
+        doc: SimpleDocTemplate
+    ) -> None:
+        
+        self.draw_rects(canvas)
+        self.import_imgs(canvas)
+        self.draw_lines(canvas)
+        self.draw_texts(canvas)
+        self.doc_rodape(canvas, doc)
+    
+    def go(self) -> None:
+        pdf = SimpleDocTemplate(
+            filename=self.filename,
+            pagesize=A4,
+            title=self.title,
+            topMargin=1.9 * inch
+        )
+
+        self.tabela.setStyle(self.table_style)
+
+        # ALTERAR A COR
+        for i in range(1, self.lines_table):
+            if i % 2 == 0:
+                bc = colors.HexColor('#F2F2F2')
+            else:
+                bc = colors.white
+
+            ts = TableStyle(
+                [('BACKGROUND', (0, i), (-1, i), bc)]
+            )
+
+            self.tabela.setStyle(ts)
+
+        # Spacer(1, 1.0 * inch)
+        elm = []
+        elm.append(self.table)
+        pdf.build(elm, onFirstPage=self.doc_first_page, onLaterPages=self.doc_first_page)

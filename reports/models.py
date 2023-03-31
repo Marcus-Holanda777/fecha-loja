@@ -17,8 +17,9 @@ ALTURA_RECT = inch
 EIXO_Y = ALTURA - (ALTURA_RECT + EIXO_X)
 LARGURA_RECT = LARGURA - (EIXO_X * MULTI_EIXO_X)
 
-# DADOS ICONE
+# DADOS ICONES
 ICON_STR = 'reports/logo.png'
+ICON_STR_02 = 'reports/caminhao.png'
 EIXO_X_ICON = 0.3 * inch
 EIXO_Y_ICON = ALTURA - 40.0
 LARGURA_ICON = 150.0
@@ -33,7 +34,6 @@ class Rect:
     fill: int
     stroke: int
 
-
 @dataclass
 class Imagem:
     image: str
@@ -43,7 +43,21 @@ class Imagem:
     height: Optional[float] = None
     mask: str = 'auto'
 
-
 @dataclass
 class Texto:
-    ...
+    x: float
+    y: float
+    size: int
+    font: str
+    lines: list[str]
+    color: str
+
+@dataclass
+class Line:
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    dash: tuple[int, int]
+    width: float
+    color: str
