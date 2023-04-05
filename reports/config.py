@@ -14,20 +14,30 @@ from reports.models import (
     EIXO_Y_ICON,
     LARGURA_ICON,
     ALTURA_ICON,
-    ESTILO_FONTE
+    ESTILO_FONTE,
+    LINHAS_POR_PAGINA
 )
 
 
 def construir_config(filial, destino, categoria, dados):
     date_rel = datetime.now().strftime('%d/%m/%Y %H:%M')
     cab = ('COD', 'NOME', 'QTD', 'OBSERVACAO')
+    med_cols = (3, 11, 2, 4)
+
+    categ = {
+        'UC': 'Ultima Chance', 
+        'PSICO': 'Psicotropicos + Antib',
+        'FRAC': 'Fracionados',
+        'ENV': 'Envelopados',
+        'TERM': 'Termolabeis'
+    }
 
     # inserir titulo na base de dados
     dados.insert(0, cab)
     
     # 20 linhas por pagina
-    tot_pag = len(dados) // 20
-    tot_pag = tot_pag + 1 if len(dados) % 20 > 0 else tot_pag
+    tot_pag = len(dados) // LINHAS_POR_PAGINA
+    tot_pag = tot_pag + 1 if len(dados) % LINHAS_POR_PAGINA > 0 else tot_pag
 
     config = {
         'title': 'Loja %04d' % filial,
@@ -78,7 +88,7 @@ def construir_config(filial, destino, categoria, dados):
                 font=ESTILO_FONTE,
                 lines=[
                       f'Fechamento loja {filial:04d}, destino filial {destino:04d}'
-                    , f'Categoria: {categoria}'
+                    , f'Categoria: {categ.get(categoria)}'
                     , f'Data relatorio: {date_rel}'
                ],
                color='#ED1C24'
@@ -86,16 +96,18 @@ def construir_config(filial, destino, categoria, dados):
         ],
         'table_style': TableStyle(
             [   
-                ('BACKGROUND', (0, 0), (4, 0), colors.HexColor('#602D7D')),
+                ('BACKGROUND', (0, 0), (4, 0), colors.HexColor('#0056AB')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BOX', (2,0), (-2, -1), 2, colors.HexColor('#ED1C24')),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
                 ('FONTSIZE', (0, 0), (-1, -1), 12),
             ]
         ),
         'table': Table(
-             data=dados, repeatRows=1, spaceBefore=1, rowHeights=len(dados)*[0.4*inch]
+             data=dados, repeatRows=1, colWidths=[med * (0.4 * inch) for med in med_cols]
         )
         ,'lines_table': len(dados)
     }

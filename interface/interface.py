@@ -18,7 +18,8 @@ from utils.utils import (
     load_categoria, 
     load_estoque, 
     load_venda,
-    distribuicao
+    distribuicao,
+    create_pdf
 )
 
 
@@ -390,11 +391,24 @@ def gera_distribuicao(
     dias: int,
     spinner: str,
     filtro_categ: list[str] = None
-) -> None:
+) -> DataFrame:
 
     terminal.rule("DISTRIBUICAO")
     with terminal.status("[bold green]Distribuindo loja ...", spinner=spinner) as live:
-        distribuicao(df_origem, df_categoria, df_dmd, df_destino, terminal, dias, filtro_categ)
+        df = distribuicao(df_origem, df_categoria, df_dmd, df_destino, terminal, dias, filtro_categ)
+
+    return df
+
+
+def gera_pdf(
+    filial: int, 
+    spinner: str, 
+    df: DataFrame
+) -> None:
+
+    terminal.rule("PDF")
+    with terminal.status("[bold green]Geracao PDF ...", spinner=spinner) as live:
+        create_pdf(filial, terminal, df)
 
 
 def menu(
@@ -420,7 +434,8 @@ def menu(
         listar_arquivos()
         table_estoque(df_origem, df_categoria, spinner)
         table_resumo(df_destino, df_categoria, df_dmd, df_origem, spinner)
-        gera_distribuicao(df_origem, df_categoria, df_dmd, df_destino, fecha.dmd, spinner, fecha.categoria)
+        distrib = gera_distribuicao(df_origem, df_categoria, df_dmd, df_destino, fecha.dmd, spinner, fecha.categoria)
+        gera_pdf(filial=fecha.filial, spinner=spinner, df=distrib)
 
         terminal.rule("RETORNO [???]")
         flag = Confirm.ask("[b]>> Deseja fechar outra filial ?[/b]", console=terminal)

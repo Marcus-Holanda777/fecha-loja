@@ -15,3 +15,5 @@ venv
 *.pdf
 *.png
 *.PNG
+/pdf
+pdf

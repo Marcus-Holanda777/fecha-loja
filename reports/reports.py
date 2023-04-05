@@ -3,8 +3,8 @@ from reportlab.platypus import Table, TableStyle, SimpleDocTemplate
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-from models import Rect, Imagem, Texto, Line
-from models import EIXO_X 
+from .models import Rect, Imagem, Texto, Line
+from .models import EIXO_X 
 from dataclasses import asdict
 
 
@@ -89,10 +89,10 @@ class Reports:
             filename=self.filename,
             pagesize=A4,
             title=self.title,
-            topMargin=1.9 * inch
+            topMargin=1.4 * inch
         )
 
-        self.tabela.setStyle(self.table_style)
+        self.table.setStyle(self.table_style)
 
         # ALTERAR A COR
         for i in range(1, self.lines_table):
@@ -105,7 +105,7 @@ class Reports:
                 [('BACKGROUND', (0, i), (-1, i), bc)]
             )
 
-            self.tabela.setStyle(ts)
+            self.table.setStyle(ts)
 
         # Spacer(1, 1.0 * inch)
         elm = []

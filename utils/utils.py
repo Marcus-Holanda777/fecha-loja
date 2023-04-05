@@ -1,14 +1,13 @@
 import pandas as pd
+from pandas import DataFrame
 import numpy as np
 from pathlib import Path
 from sqlalchemy.engine import Engine
 from dateutil.relativedelta import relativedelta
 from datetime import date
 from rich.console import Console
-from rich.live import Live
-from rich.table import Table
-from rich.align import Align
-
+from reports.config import construir_config
+from reports.reports import Reports
 
 PATH_SEL = Path() / 'data'
 
@@ -198,7 +197,7 @@ def distribuicao(
     terminal: Console,
     dias: int,
     filtro_categ: list[str] = None
-) -> None:
+) -> DataFrame:
     
     # TODO: Verificar se tem UC na origem
     if 'UC' in set(filtro_categ):
@@ -311,3 +310,22 @@ def distribuicao(
     terminal.log('Exportado, distribuicao')
     df_origem.to_excel('ORIGEM.xlsx', index=False)
     terminal.log('Exportado origem')
+
+
+    return df_dist
+
+
+def create_pdf(filial: int, terminal: Console, df: DataFrame) -> None:
+    grups = df.sort_values(['FILIAL', 'CATEG_ORIGEM']).groupby(['FILIAL', 'CATEG_ORIGEM'])
+
+    for keys, data in grups:
+        destino, categoria = keys
+        dados = list(
+            data.loc[:, ['COD_DV', 'DESCRICAO', 'DISTRIB']]
+            .sort_values('DESCRICAO')
+            .to_records(index=False)
+        )
+
+        config = construir_config(filial=filial, destino=destino, categoria=categoria, dados=dados)
+        Reports(**config).go()
+        terminal.log(f":book: [bold red]Destino -> {destino:04d}[/] {categoria}, pags: {len(dados)}")
