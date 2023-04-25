@@ -189,6 +189,69 @@ def load_venda(
     return df
 
 
+def zera_loja(
+    df_origem: DataFrame,
+    df_dist: DataFrame,
+    df_categoria: DataFrame
+) -> None:
+
+   # TODO: Gerar base do que ainda falta distribuir
+   df_origem = (
+    df_origem
+     .assign(
+        FALTA = lambda _df: _df['QT_ESTOQUE'] - _df['DISTRIB']
+     )
+     .query('FALTA > 0')
+     .merge(
+        df_categoria.loc[:, ['CODIGO', 'COD_DV', 'DESCRICAO']],
+        how='inner',
+        on=['CODIGO']
+    )
+   )
+
+   # TODO: Encontrar o total de lojas que pode receber o produto
+   filiais_recebe = df_dist['FILIAL'].unique().tolist()
+
+   # TODO: Lista com o novo dataframe
+   df_novo = []
+
+   # TODO: Colunas no novo dataframe
+   cols = ['COD_DV', 'DESCRICAO', 'CATEG']
+
+   # TODO: Definir o item e distribuir o total
+   # pela quantidade de lojas
+   for enviar in df_origem.itertuples():
+       # TODO: Pegar a posicao da linha no daaframe
+       index = enviar.Index
+
+       # TODO: Verificar a quantidade de lojas
+       len_lojas = (
+           enviar.FALTA if len(filiais_recebe) >= enviar.FALTA
+           else len(filiais_recebe)
+       )
+
+       is_receb = (enviar.FALTA % len_lojas) == 0
+       while not is_receb:
+           len_lojas -= 1
+           is_receb = (enviar.FALTA % len_lojas) == 0
+       
+       # TODO: Defini a quantidade e faz a distribuicao
+       qtd_envia = int(enviar.FALTA / len_lojas)
+
+       for fil in filiais_recebe[:len_lojas]:
+           df = (
+              df_origem.loc[[index], cols]
+              .assign(FILIAL = fil)
+              .assign(DISTRIB = qtd_envia)
+              .rename(columns={'CATEG': 'CATEG_ORIGEM'})
+            )
+           df_novo.append(df)
+    
+   df_novo = pd.concat(df_novo)
+
+   return pd.concat([df_dist, df_novo])
+
+
 def distribuicao(
     df_origem: pd.DataFrame, 
     df_categoria: pd.DataFrame, 
@@ -312,30 +375,13 @@ def distribuicao(
     df_origem.to_excel('ORIGEM.xlsx', index=False)
     terminal.log('Exportado origem')
 
+    terminal.log('Zerando loja origem')
+    df_dist = zera_loja(df_origem, df_dist, df_categoria)
+    terminal.log('Exportando zera loja')
+    df_dist.to_excel('DISTRIBUIDO_ZERO.xlsx', index=False)
 
     return df_dist
 
-
-def zera_loja(
-    df_origem: DataFrame,
-    df_dist: DataFrame
-) -> None:
-
-   # TODO: Gerar base do que ainda falta distribuir
-   df_origem = (
-    df_origem
-     .loc[
-        lambda _df: (_df['QT_ESTOQUE'] - _df['DISTRIB']) > 0,
-        :
-     ]
-   )
-
-   # TODO: Encontrar o total de lojas que pode receber o produto
-   filiais_recebe = df_dist['FILIAL'].unique().tolist()
-
-   # TODO: Definir o item e distribuir o total
-   # pela quantidade de lojas
-   
 
 def create_pdf(filial: int, terminal: Console, df: DataFrame) -> None:
     grups = df.sort_values(['FILIAL', 'CATEG_ORIGEM']).groupby(['FILIAL', 'CATEG_ORIGEM'])
@@ -343,7 +389,9 @@ def create_pdf(filial: int, terminal: Console, df: DataFrame) -> None:
     for keys, data in grups:
         destino, categoria = keys
         dados = list(
-            data.loc[:, ['COD_DV', 'DESCRICAO', 'DISTRIB']]
+            data
+            .groupby(['COD_DV', 'DESCRICAO'], as_index=False)
+            .agg({'DISTRIB': 'sum'})
             .sort_values('DESCRICAO')
             .to_records(index=False)
         )
