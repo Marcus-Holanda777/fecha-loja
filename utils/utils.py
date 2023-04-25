@@ -8,6 +8,8 @@ from datetime import date
 from rich.console import Console
 from reports.config import construir_config
 from reports.reports import Reports
+from PyPDF2 import PdfReader
+from datetime import datetime
 
 PATH_SEL = Path() / 'data'
 
@@ -383,6 +385,20 @@ def distribuicao(
     return df_dist
 
 
+def get_pags(filial, destino, categoria):
+    date_rel = datetime.now().strftime('%d/%m/%Y %H:%M')
+    arq_output = Path() / 'pdf' / f"{filial:04d}_{date_rel[:-6].replace('/', '')}"
+    arquivo =str(
+            arq_output
+            .joinpath(
+                'Transferencia_filial_%04d_%04d_%s.pdf' % (filial, destino, categoria)
+        )
+    )
+    
+    meta = PdfReader(arquivo)
+    return len(meta.pages)
+
+
 def create_pdf(filial: int, terminal: Console, df: DataFrame) -> None:
     grups = df.sort_values(['FILIAL', 'CATEG_ORIGEM']).groupby(['FILIAL', 'CATEG_ORIGEM'])
 
@@ -398,4 +414,6 @@ def create_pdf(filial: int, terminal: Console, df: DataFrame) -> None:
 
         config = construir_config(filial=filial, destino=destino, categoria=categoria, dados=dados)
         Reports(**config).go()
-        terminal.log(f":book: [bold red]Destino -> {destino:04d}[/] {categoria}, pags: {len(dados)}")
+
+        pags = get_pags(filial, destino, categoria)
+        terminal.log(f":book: [bold red]Destino -> {destino:04d}[/] {categoria}, pags: {pags}")
