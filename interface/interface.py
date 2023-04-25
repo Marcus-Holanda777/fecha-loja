@@ -189,10 +189,10 @@ def input_definicoes() -> Fecha:
 
 def gera_estoque(
     fecha: Fecha, 
-    conn: Engine, 
+    conn: Engine,
     lojas: tuple[int], 
     spinner: str
-) -> tuple[pd.DataFrame]:
+) -> tuple[DataFrame]:
     """_summary_
 
     Args:
@@ -224,7 +224,7 @@ def gera_demanda(
     conn_bk: Engine, 
     lojas: tuple[int], 
     spinner: str
-) -> pd.DataFrame:
+) -> DataFrame:
     """_summary_
 
     Args:

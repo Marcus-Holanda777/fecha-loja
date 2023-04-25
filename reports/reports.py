@@ -6,6 +6,7 @@ from reportlab.lib import colors
 from .models import Rect, Imagem, Texto, Line
 from .models import EIXO_X 
 from dataclasses import asdict
+from pathlib import Path
 
 
 class Reports:
@@ -67,7 +68,12 @@ class Reports:
             canvas.drawText(texto)
             canvas.restoreState()
     
-    def doc_rodape(self, canvas: Canvas, doc: SimpleDocTemplate):
+    def doc_rodape(
+        self, 
+        canvas: Canvas, 
+        doc: SimpleDocTemplate
+    ) -> None:
+
         canvas.saveState()
         canvas.drawString(EIXO_X, EIXO_X, "Pagina: %02d de %02d" % (doc.page, self.pags))
         canvas.restoreState()

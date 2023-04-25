@@ -223,7 +223,8 @@ def distribuicao(
             df_categoria.loc[df_categoria['CODIGO'].isin(lista_codigo), :], 
             how='inner', on='CODIGO'
         )
-        .merge(df_dmd, how='inner', on=['FILIAL', 'CODIGO'])
+        .merge(df_dmd, how='left', on=['FILIAL', 'CODIGO'])
+        .assign(DMD = lambda _df: _df['DMD'].fillna(0))
         .assign(RECEBER = lambda _df: np.where(
               (dias * _df['DMD']) - _df['QT_ESTOQUE'] <= 0, 0,
               round((dias * _df['DMD']) - _df['QT_ESTOQUE'], 0)
@@ -314,6 +315,27 @@ def distribuicao(
 
     return df_dist
 
+
+def zera_loja(
+    df_origem: DataFrame,
+    df_dist: DataFrame
+) -> None:
+
+   # TODO: Gerar base do que ainda falta distribuir
+   df_origem = (
+    df_origem
+     .loc[
+        lambda _df: (_df['QT_ESTOQUE'] - _df['DISTRIB']) > 0,
+        :
+     ]
+   )
+
+   # TODO: Encontrar o total de lojas que pode receber o produto
+   filiais_recebe = df_dist['FILIAL'].unique().tolist()
+
+   # TODO: Definir o item e distribuir o total
+   # pela quantidade de lojas
+   
 
 def create_pdf(filial: int, terminal: Console, df: DataFrame) -> None:
     grups = df.sort_values(['FILIAL', 'CATEG_ORIGEM']).groupby(['FILIAL', 'CATEG_ORIGEM'])

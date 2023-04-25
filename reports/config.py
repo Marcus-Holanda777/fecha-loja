@@ -1,4 +1,10 @@
-from reports.models import Rect, Texto, Imagem, Line, inch
+from reports.models import (
+    Rect, 
+    Texto, 
+    Imagem, 
+    Line, 
+    inch
+)
 from reportlab.lib import colors
 from reportlab.platypus import Table, TableStyle
 from datetime import datetime
@@ -17,10 +23,20 @@ from reports.models import (
     ESTILO_FONTE,
     LINHAS_POR_PAGINA
 )
+from pathlib import Path
 
 
-def construir_config(filial, destino, categoria, dados):
+def construir_config(
+    filial, 
+    destino, 
+    categoria, 
+    dados
+) -> dict:
+
+    
+    
     date_rel = datetime.now().strftime('%d/%m/%Y %H:%M')
+    arq_output = Path() / 'pdf' / f"{filial:04d}_{date_rel[:-6].replace('/', '')}"
     cab = ('COD', 'NOME', 'QTD', 'OBSERVACAO')
     med_cols = (3, 11, 2, 4)
 
@@ -32,16 +48,23 @@ def construir_config(filial, destino, categoria, dados):
         'TERM': 'Termolabeis'
     }
 
-    # inserir titulo na base de dados
     dados.insert(0, cab)
     
-    # 20 linhas por pagina
     tot_pag = len(dados) // LINHAS_POR_PAGINA
     tot_pag = tot_pag + 1 if len(dados) % LINHAS_POR_PAGINA > 0 else tot_pag
+    
+    # verifica se arquivo ja existe -- cria se não existir
+    if not arq_output.is_dir():
+        arq_output.mkdir()
+
 
     config = {
         'title': 'Loja %04d' % filial,
-        'filename': 'Transferencia_filial_%04d_%04d_%s.pdf' %(filial, destino, categoria),
+        'filename': str(
+            arq_output.joinpath(
+            'Transferencia_filial_%04d_%04d_%s.pdf' %(filial, destino, categoria)
+          )
+        ),
         'pags': tot_pag,
         'rects': [
             Rect(
