@@ -19,8 +19,8 @@ EIXO_Y = ALTURA - (ALTURA_RECT + EIXO_X)
 LARGURA_RECT = LARGURA - (EIXO_X * MULTI_EIXO_X)
 
 # DADOS ICONES
-ICON_STR = 'reports/logo.png'
-ICON_STR_02 = 'reports/caminhao.png'
+ICON_STR = 'assets/logo.png'
+ICON_STR_02 = 'assets/caminhao.png'
 EIXO_X_ICON = 0.3 * inch
 EIXO_Y_ICON = ALTURA - 40.0
 LARGURA_ICON = 150.0
