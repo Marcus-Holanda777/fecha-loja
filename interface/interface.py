@@ -245,11 +245,11 @@ def gera_demanda(
     return df_dmd
 
 
-def listar_arquivos():
+def listar_arquivos(extensao = '.parquet'):
     terminal.rule("LISTA [ARQUIVOS]")
     t = Tree(label=":file_folder: arquivos")
     for d in Path('data').iterdir():
-        if d.suffix == '.parquet':
+        if d.suffix == extensao:
             t.add(f':book: [bold green]{d.name}') 
     terminal.print(t)
 
@@ -432,9 +432,12 @@ def menu(
         df_destino, df_origem, df_categoria = gera_estoque(fecha, conn, lojas, spinner)
         df_dmd = gera_demanda(conn, conn_bk, lojas, spinner)
         listar_arquivos()
+
         table_estoque(df_origem, df_categoria, spinner)
         table_resumo(df_destino, df_categoria, df_dmd, df_origem, spinner)
         distrib = gera_distribuicao(df_origem, df_categoria, df_dmd, df_destino, fecha.dmd, spinner, fecha.categoria)
+        listar_arquivos('.xlsx')
+        
         gera_pdf(filial=fecha.filial, spinner=spinner, df=distrib)
 
         terminal.rule("RETORNO [???]")

@@ -10,6 +10,7 @@ from reports.config import construir_config
 from reports.reports import Reports
 from PyPDF2 import PdfReader
 from datetime import datetime
+import zipfile
 
 PATH_SEL = Path() / 'data'
 
@@ -326,6 +327,7 @@ def distribuicao(
     # TODO: Fazer a distribuicao
     id_movimento = 1
     for enviar in df_origem.itertuples():
+        filial_origem = enviar.FILIAL
         codigo_env = enviar.CODIGO
         qtd_env = enviar.QT_ESTOQUE
         index = enviar.Index
@@ -372,15 +374,15 @@ def distribuicao(
             df_origem.loc[index, 'DISTRIB'] += diminuir
         
     terminal.log('Distribuicao concluida')
-    df_dist.to_excel('DISTRIBUIDO.xlsx', index=False)
+    df_dist.to_excel(f'data/DISTRIBUIDO_{filial_origem}.xlsx', index=False)
     terminal.log('Exportado, distribuicao')
-    df_origem.to_excel('ORIGEM.xlsx', index=False)
+    df_origem.to_excel(f'data/ORIGEM_{filial_origem}.xlsx', index=False)
     terminal.log('Exportado origem')
 
     terminal.log('Zerando loja origem')
     df_dist = zera_loja(df_origem, df_dist, df_categoria)
     terminal.log('Exportando zera loja')
-    df_dist.to_excel('DISTRIBUIDO_ZERO.xlsx', index=False)
+    df_dist.to_excel(f'data/DISTRIBUIDO_ZERO_{filial_origem}.xlsx', index=False)
 
     return df_dist
 
@@ -399,8 +401,47 @@ def get_pags(filial, destino, categoria):
     return len(meta.pages)
 
 
-def create_pdf(filial: int, terminal: Console, df: DataFrame) -> None:
+def zip_categoria(
+    filial, 
+    categ
+) -> None:
+    
+    categ_name = {
+        'UC': 'ULTIMA_CHANCE',
+        'TERM': 'TERMOLABEIS',
+        'FRAC': 'FRACIONADOS',
+        'ENV': 'FRACIONADOS',
+        'PSICO': 'PSICOTROPICOS_ANTIBIOTICOS'
+    }
+
+    date_rel = datetime.now().strftime('%d/%m/%Y %H:%M')
+    pasta = Path() / 'pdf' / f"{filial:04d}_{date_rel[:-6].replace('/', '')}"
+    file_zip = pasta / f'{filial:04d}_{categ_name.get(categ)}.zip'
+
+    if categ == 'FRAC':
+        compilados = ["**/*ENV*.pdf", "**/*FRAC*.pdf"]
+    else:
+        compilados = [f"**/*{categ}*.pdf"]
+
+    arquivos = [
+        arq for busca in compilados 
+        for arq in pasta.glob(busca)
+    ]
+
+    with zipfile.ZipFile(file_zip, 'w') as zip:
+        for arq in arquivos:
+            zip.write(arq, arq.name, compress_type=zipfile.ZIP_DEFLATED)
+
+
+def create_pdf(
+    filial: int, 
+    terminal: Console, 
+    df: DataFrame
+) -> None:
+
     grups = df.sort_values(['FILIAL', 'CATEG_ORIGEM']).groupby(['FILIAL', 'CATEG_ORIGEM'])
+    
+    categs = set()
 
     for keys, data in grups:
         destino, categoria = keys
@@ -411,9 +452,15 @@ def create_pdf(filial: int, terminal: Console, df: DataFrame) -> None:
             .sort_values('DESCRICAO')
             .to_records(index=False)
         )
-
+ 
+        categs.add(categoria) # para zipar os arquivos
         config = construir_config(filial=filial, destino=destino, categoria=categoria, dados=dados)
         Reports(**config).go()
 
         pags = get_pags(filial, destino, categoria)
         terminal.log(f":book: [bold red]Destino -> {destino:04d}[/] {categoria}, pags: {pags}")
+
+    categs.remove('ENV')
+    for cat in categs:
+        zip_categoria(filial, cat)
+        terminal.log(f":package: [bold green]Zip -> {cat}[/]")
