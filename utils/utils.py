@@ -410,7 +410,6 @@ def zip_categoria(
         'UC': 'ULTIMA_CHANCE',
         'TERM': 'TERMOLABEIS',
         'FRAC': 'FRACIONADOS',
-        'ENV': 'FRACIONADOS',
         'PSICO': 'PSICOTROPICOS_ANTIBIOTICOS'
     }
 
@@ -418,18 +417,10 @@ def zip_categoria(
     pasta = Path() / 'pdf' / f"{filial:04d}_{date_rel[:-6].replace('/', '')}"
     file_zip = pasta / f'{filial:04d}_{categ_name.get(categ)}.zip'
 
-    if categ == 'FRAC':
-        compilados = ["**/*ENV*.pdf", "**/*FRAC*.pdf"]
-    else:
-        compilados = [f"**/*{categ}*.pdf"]
-
-    arquivos = [
-        arq for busca in compilados 
-        for arq in pasta.glob(busca)
-    ]
+    compilados = f"**/*{categ}*.pdf"
 
     with zipfile.ZipFile(file_zip, 'w') as zip:
-        for arq in arquivos:
+        for arq in pasta.glob(compilados):
             zip.write(arq, arq.name, compress_type=zipfile.ZIP_DEFLATED)
 
 
@@ -440,7 +431,6 @@ def create_pdf(
 ) -> None:
 
     grups = df.sort_values(['FILIAL', 'CATEG_ORIGEM']).groupby(['FILIAL', 'CATEG_ORIGEM'])
-    
     categs = set()
 
     for keys, data in grups:
@@ -452,16 +442,14 @@ def create_pdf(
             .sort_values('DESCRICAO')
             .to_records(index=False)
         )
- 
-        categs.add(categoria) # para zipar os arquivos
+        
+        categs.add(categoria)
+
         config = construir_config(filial=filial, destino=destino, categoria=categoria, dados=dados)
         Reports(**config).go()
 
         pags = get_pags(filial, destino, categoria)
         terminal.log(f":book: [bold red]Destino -> {destino:04d}[/] {categoria}, pags: {pags}")
-    
-    if 'ENV' in categs:
-        categs.remove('ENV')
         
     for cat in categs:
         zip_categoria(filial, cat)

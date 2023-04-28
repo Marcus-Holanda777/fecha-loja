@@ -132,7 +132,7 @@ def retorna_categoria() -> list[str] | None:
     Returns:
         list[str] | None: _description_
     """
-    categs = ['term', 'frac', 'env', 'psico', 'uc']
+    categs = ['term', 'frac', 'psico', 'uc']
 
     while True:
         categ = Prompt.ask(f">> categoria [b magenta]{categs}[/]", console=terminal, default='full')
