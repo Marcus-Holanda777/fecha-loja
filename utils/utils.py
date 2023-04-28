@@ -459,8 +459,10 @@ def create_pdf(
 
         pags = get_pags(filial, destino, categoria)
         terminal.log(f":book: [bold red]Destino -> {destino:04d}[/] {categoria}, pags: {pags}")
-
-    categs.remove('ENV')
+    
+    if 'ENV' in categs:
+        categs.remove('ENV')
+        
     for cat in categs:
         zip_categoria(filial, cat)
         terminal.log(f":package: [bold green]Zip -> {cat}[/]")
